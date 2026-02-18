@@ -1,0 +1,68 @@
+# Phase 2: Unbinding fine-tuning with DD-13M dataset
+# Initialize from: Phase 1 (or Phase 1.5) checkpoint
+# Duration: ~200K steps
+
+# === Model ===
+token_s: 384
+token_z: 128
+atom_s: 128
+atom_z: 16
+atom_feature_dim: 128
+atoms_per_window_queries: 32
+atoms_per_window_keys: 128
+sigma_data: 16.0
+dim_fourier: 256
+atom_encoder_depth: 3
+atom_encoder_heads: 4
+atom_temporal_heads: 4
+token_transformer_depth: 24
+token_transformer_heads: 16
+token_temporal_heads: 16
+atom_decoder_depth: 3
+atom_decoder_heads: 4
+conditioning_transition_layers: 2
+activation_checkpointing: true
+freeze_diffusion_conditioning: false
+
+# === Training ===
+training_mode: unbinding
+causal: true
+resume_from: checkpoints/phase1/step_XXXXX
+resume_optimizer: false
+lr: 5.0e-5
+warmup_steps: 100
+max_steps: 200000
+max_epochs: 1000
+batch_size_per_gpu: 1
+gradient_accumulation_steps: 4
+grad_clip: 10.0
+seed: 42
+n_frames: 32
+P_mean: -1.2
+P_std: 1.5
+forecast_prob: 0.5
+num_workers: 4
+
+# === Loss ===
+alpha_bond: 1.0
+beta_center: 1.0
+mol_weights:
+  protein: 1.0
+  dna: 5.0
+  rna: 5.0
+  ligand: 10.0
+
+# === Data ===
+dataset_weights:
+  dd13m: 1.0
+dt_ranges:
+  dd13m: [0.01, 0.01]
+
+# === Paths ===
+boltz2_checkpoint: ~/.boltz/boltz2_conf.ckpt
+manifest_path: data/processed/manifest.json
+trunk_cache_dir: data/processed/trunk_embeddings/
+coords_dir: data/processed/coords/
+output_dir: checkpoints/phase2/
+log_every: 50
+save_every: 5000

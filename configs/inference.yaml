@@ -1,0 +1,47 @@
+# Inference configuration for BoltzKinema trajectory generation
+
+# === Model ===
+token_s: 384
+token_z: 128
+atom_s: 128
+atom_z: 16
+atom_feature_dim: 128
+atoms_per_window_queries: 32
+atoms_per_window_keys: 128
+sigma_data: 16.0
+dim_fourier: 256
+atom_encoder_depth: 3
+atom_encoder_heads: 4
+atom_temporal_heads: 4
+token_transformer_depth: 24
+token_transformer_heads: 16
+token_temporal_heads: 16
+atom_decoder_depth: 3
+atom_decoder_heads: 4
+conditioning_transition_layers: 2
+
+# === Sampling ===
+sigma_min: 0.0001
+sigma_max: 160.0
+rho: 7
+n_denoise_steps: 20
+noise_scale: 1.75
+step_scale: 1.5
+
+# === Generation ===
+mode: equilibrium          # equilibrium | unbinding
+n_frames: 32               # frames per generation window
+n_cond_frames: 4           # conditioning frames from previous window
+total_frames: 100           # total trajectory frames to generate
+dt_ns: 1.0                 # timestep between frames in nanoseconds
+
+# === Hierarchical sampling ===
+hierarchical: false
+coarse_n_frames: 8
+coarse_dt_ns: 10.0
+fine_interp_factor: 4
+
+# === Paths ===
+checkpoint: checkpoints/phase1/step_XXXXX
+trunk_cache_dir: data/processed/trunk_embeddings/
+output_dir: outputs/

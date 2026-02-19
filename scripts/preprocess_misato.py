@@ -1,7 +1,7 @@
 """MISATO dataset preprocessing.
 
 Converts HDF5 protein-ligand complexes to processed format.
-~16,000 protein-ligand complexes, 8ns each (100 frames).
+~16,972 protein-ligand complexes, 10ns each.
 
 Pipeline:
   1. Read HDF5 entries (coordinates + topology)

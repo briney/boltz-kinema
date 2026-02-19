@@ -2,7 +2,7 @@
 
 Downloads all raw datasets needed for training:
   - ATLAS: GROMACS trajectories (~30 GB)
-  - MISATO: HDF5 protein-ligand complexes (~50 GB)
+  - MISATO: HDF5 protein-ligand complexes (~133 GB for MD.hdf5)
   - MDposit/DynaRepo: PDB + XTC trajectories (~200 GB)
   - DD-13M: Metadynamics dissociation trajectories (~100 GB)
   - CATH2: CATH domain trajectories (~28 GB compressed)
@@ -117,20 +117,43 @@ def download_atlas(output_dir: Path) -> None:
 
 
 def download_misato(output_dir: Path) -> None:
-    """Download MISATO dataset (~50 GB).
+    """Download MISATO dataset (~190 GB total).
 
-    Source: https://github.com/t7morgen/misato-dataset
-    ~16,000 protein-ligand complexes, 8ns each (100 frames).
-    Format: HDF5 with coordinates + topology.
+    Source: https://zenodo.org/record/7711953
+    ~16,972 protein-ligand complexes, 10ns each.
+    Files:
+      - MD.hdf5 (~133 GB): MD trajectories (coordinates + topology)
+      - QM.hdf5 (~0.3 GB): quantum mechanics ligand properties
+      - parameter_restart_files_MD.tar.gz (~55 GB): topology/restart files
+      - densities_gfn2w_mrc.tar.gz (~6 GB): electron densities
+      - train_MD.txt, val_MD.txt, test_MD.txt: train/val/test splits
     """
     misato_dir = output_dir / "misato"
-    misato_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Downloading MISATO dataset to %s", misato_dir)
-    logger.info(
-        "MISATO requires its own download tool. "
-        "Run: python -m misato.download --output-dir %s",
-        misato_dir,
+
+    # Core files needed for training: MD trajectories + split lists
+    core_files = [
+        "MD.hdf5",
+        "QM.hdf5",
+        "train_MD.txt",
+        "val_MD.txt",
+        "test_MD.txt",
+    ]
+    _download_zenodo_files(
+        record_id="7711953",
+        filenames=core_files,
+        output_dir=misato_dir,
     )
+
+    # Optional: topology/restart files and electron densities
+    # These are large and not required for basic training.
+    # Uncomment to download:
+    # _download_zenodo_files(
+    #     record_id="7711953",
+    #     filenames=["parameter_restart_files_MD.tar.gz",
+    #                "densities_gfn2w_mrc.tar.gz"],
+    #     output_dir=misato_dir,
+    # )
 
 
 def download_dynarepo(output_dir: Path, max_workers: int = 4) -> None:

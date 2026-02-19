@@ -1,0 +1,16 @@
+## Accelerate config for multi-GPU DDP training (8 GPUs).
+##
+## Usage:
+##   accelerate launch --config_file configs/accelerate_multi_gpu.yaml \
+##       scripts/train.py --config configs/train_phase0.yaml
+##
+## Override num_processes for different GPU counts:
+##   accelerate launch --config_file configs/accelerate_multi_gpu.yaml \
+##       --num_processes 4 scripts/train.py --config configs/train_phase0.yaml
+
+compute_environment: LOCAL_MACHINE
+distributed_type: MULTI_GPU
+mixed_precision: bf16
+num_machines: 1
+num_processes: 8
+use_cpu: false

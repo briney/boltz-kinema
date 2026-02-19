@@ -1,0 +1,12 @@
+## Accelerate config for single-GPU training.
+##
+## Usage:
+##   accelerate launch --config_file configs/accelerate_single_gpu.yaml \
+##       scripts/train.py --config configs/train_phase0.yaml
+
+compute_environment: LOCAL_MACHINE
+distributed_type: 'NO'
+mixed_precision: bf16
+num_machines: 1
+num_processes: 1
+use_cpu: false

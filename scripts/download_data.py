@@ -110,8 +110,15 @@ def download_atlas(output_dir: Path) -> None:
     resp = requests.get(f"{base_url}/api/parsable", timeout=60)
     resp.raise_for_status()
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        # Find the ATLAS PDB list file (date-prefixed, inside a subdirectory)
+        pdb_files = [n for n in zf.namelist() if n.endswith("_ATLAS_pdb.txt")]
+        if not pdb_files:
+            raise FileNotFoundError(
+                f"No *_ATLAS_pdb.txt found in parsable archive. "
+                f"Contents: {zf.namelist()}"
+            )
         chain_ids = (
-            zf.read("ATLAS_pdb.txt").decode().strip().splitlines()
+            zf.read(pdb_files[0]).decode().strip().splitlines()
         )
     logger.info("Found %d chains in ATLAS", len(chain_ids))
 

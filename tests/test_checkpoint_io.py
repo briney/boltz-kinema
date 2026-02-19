@@ -10,9 +10,12 @@ pytest.importorskip("boltz")
 from safetensors.torch import save_file
 
 from boltzkinema.model.checkpoint_io import (
+    find_latest_step_checkpoint,
     find_model_weights_file,
+    has_unresolved_step_placeholder,
     load_checkpoint_file,
     load_model_state_dict,
+    resolve_checkpoint_path,
 )
 
 
@@ -51,3 +54,43 @@ def test_load_model_state_dict_unwraps_state_dict(tmp_path) -> None:
 
     loaded = load_model_state_dict(path)
     assert torch.allclose(loaded["weight"], inner["weight"])
+
+
+def test_has_unresolved_step_placeholder_detects_placeholder() -> None:
+    assert has_unresolved_step_placeholder("checkpoints/phase1/step_XXXXX")
+    assert has_unresolved_step_placeholder("checkpoints/phase1/step_xxx/model.safetensors")
+    assert not has_unresolved_step_placeholder("checkpoints/phase1/step_1000")
+
+
+def test_find_latest_step_checkpoint_selects_max_numeric_step(tmp_path) -> None:
+    (tmp_path / "step_100").mkdir()
+    (tmp_path / "step_250").mkdir()
+    (tmp_path / "step_42").mkdir()
+    (tmp_path / "latest").mkdir()
+
+    latest = find_latest_step_checkpoint(tmp_path)
+    assert latest == tmp_path / "step_250"
+
+
+def test_resolve_checkpoint_path_auto_resolves_latest_step(tmp_path) -> None:
+    step_10 = tmp_path / "step_10"
+    step_25 = tmp_path / "step_25"
+    step_10.mkdir()
+    step_25.mkdir()
+
+    target_file = step_25 / "model.safetensors"
+    target_file.write_bytes(b"placeholder")
+
+    resolved = resolve_checkpoint_path(
+        tmp_path / "step_XXXXX" / "model.safetensors",
+        auto_resolve_latest=True,
+    )
+    assert resolved == target_file
+
+
+def test_resolve_checkpoint_path_raises_when_placeholder_cannot_resolve(tmp_path) -> None:
+    with pytest.raises(ValueError, match="step_\\*"):
+        resolve_checkpoint_path(
+            tmp_path / "step_XXXXX",
+            auto_resolve_latest=True,
+        )

@@ -20,6 +20,25 @@ import argparse
 
 from omegaconf import OmegaConf
 
+from boltzkinema.model.checkpoint_io import (
+    has_unresolved_step_placeholder,
+    resolve_checkpoint_path,
+)
+
+
+def _preflight_checkpoint_paths(cfg) -> None:
+    """Fail fast on unresolved checkpoint placeholders in training config."""
+    resume_from = cfg.get("resume_from")
+    if not resume_from:
+        return
+
+    had_placeholder = has_unresolved_step_placeholder(resume_from)
+    resolved = resolve_checkpoint_path(resume_from, auto_resolve_latest=True)
+    cfg.resume_from = str(resolved)
+
+    if had_placeholder:
+        print(f"[preflight] Resolved resume_from: {resume_from} -> {resolved}")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -53,6 +72,8 @@ def main() -> None:
     if overrides:
         cli_cfg = OmegaConf.from_dotlist(overrides)
         cfg = OmegaConf.merge(cfg, cli_cfg)
+
+    _preflight_checkpoint_paths(cfg)
 
     # Import here to avoid slow imports before arg parsing
     from boltzkinema.training.trainer import train

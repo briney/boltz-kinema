@@ -28,7 +28,9 @@ from omegaconf import DictConfig, OmegaConf
 
 from boltzkinema.model.checkpoint_io import (
     find_model_weights_file,
+    has_unresolved_step_placeholder,
     load_model_state_dict,
+    resolve_checkpoint_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -206,11 +208,23 @@ def _build_model(config: InferenceConfig) -> torch.nn.Module:
     )
 
     # Load trained checkpoint
-    ckpt_path = os.path.expanduser(config.checkpoint)
-    if not os.path.exists(ckpt_path):
+    had_placeholder = has_unresolved_step_placeholder(config.checkpoint)
+    ckpt_path = resolve_checkpoint_path(
+        config.checkpoint,
+        auto_resolve_latest=True,
+    )
+    if had_placeholder:
+        logger.warning(
+            "Resolved checkpoint placeholder: %s -> %s",
+            config.checkpoint,
+            ckpt_path,
+        )
+
+    if not ckpt_path.exists():
         raise FileNotFoundError(
             f"Checkpoint not found: {ckpt_path}. "
-            "Provide a valid path via --config or checkpoint=..."
+            "Provide a valid path via --config or checkpoint=..., "
+            "or point to a parent with step_* directories when using step_XXXXX."
         )
 
     # Support Accelerate checkpoints (pytorch_model.bin / model.safetensors)

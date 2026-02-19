@@ -30,17 +30,22 @@ import logging
 import tempfile
 from pathlib import Path
 
-import mdtraj
-import numpy as np
-
 from boltzkinema.data.preprocessing import (
     align_trajectory,
-    build_observation_mask,
-    convert_trajectory,
-    extract_atom_metadata,
     remove_solvent,
-    save_reference_structure,
 )
+try:
+    from scripts.preprocess_common import (
+        collect_manifest_entries,
+        finalize_processed_system,
+        write_manifest_entries,
+    )
+except ImportError:
+    from preprocess_common import (
+        collect_manifest_entries,
+        finalize_processed_system,
+        write_manifest_entries,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -118,31 +123,13 @@ def preprocess_one(
             # Step 2: Frame alignment
             traj = align_trajectory(clean_traj, system["topology"])
 
-        # Step 3: Build observation mask
-        coords_A = traj.xyz[0] * 10.0  # nm -> A
-        observed_mask = build_observation_mask(coords_A)
-
-        # Step 4-5: Convert and save
-        coords_path = convert_trajectory(traj, system_id, output_dir, observed_mask)
-
-        # Save reference structure
-        atoms = extract_atom_metadata(traj)
-        ref_path = save_reference_structure(
-            atoms, coords_A, ref_dir / f"{system_id}_ref.npz"
+        return finalize_processed_system(
+            system_id=system_id,
+            dataset="cath2",
+            traj=traj,
+            output_dir=output_dir,
+            ref_dir=ref_dir,
         )
-
-        return {
-            "system_id": system_id,
-            "dataset": "cath2",
-            "n_frames": traj.n_frames,
-            "n_atoms": traj.n_atoms,
-            "n_tokens": len(set(a["residue_index"] for a in atoms)),
-            "frame_dt_ns": float(traj.timestep) / 1000.0,
-            "split": "train",
-            "coords_path": str(coords_path),
-            "trunk_cache_dir": "",
-            "ref_path": str(ref_path),
-        }
 
     except Exception:
         logger.exception("Failed to process %s", system_id)
@@ -162,17 +149,15 @@ def main() -> None:
     systems = find_cath2_systems(Path(args.input_dir))
     logger.info("Found %d CATH2 systems", len(systems))
 
-    manifest_entries = []
-    for system in systems:
-        entry = preprocess_one(system, Path(args.output_dir), Path(args.ref_dir))
-        if entry is not None:
-            manifest_entries.append(entry)
-
-    manifest_path = Path(args.manifest_out)
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(manifest_path, "w") as f:
-        json.dump(manifest_entries, f, indent=2)
-    logger.info("Saved %d entries to %s", len(manifest_entries), manifest_path)
+    manifest_entries = collect_manifest_entries(
+        systems,
+        lambda system: preprocess_one(
+            system,
+            Path(args.output_dir),
+            Path(args.ref_dir),
+        ),
+    )
+    write_manifest_entries(manifest_entries, args.manifest_out)
 
 
 if __name__ == "__main__":

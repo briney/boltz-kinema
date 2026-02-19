@@ -48,16 +48,29 @@ class SystemInfo:
     feats_path: str | None = None
     # Lazily loaded data (not serialized)
     _coords: np.ndarray | None = field(default=None, repr=False, compare=False)
+    _coords_meta: dict[str, np.ndarray] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _ref_data: dict[str, np.ndarray] | None = field(default=None, repr=False, compare=False)
+
+    def _load_coords_data(self) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        """Load and cache coordinates NPZ payload."""
+        if self._coords is None or self._coords_meta is None:
+            with np.load(self.coords_path, allow_pickle=False) as data:
+                self._coords = data["coords"]  # (total_frames, n_atoms, 3), Angstrom
+                self._coords_meta = {
+                    key: data[key] for key in data.files if key != "coords"
+                }
+        return self._coords, self._coords_meta
 
     def load_coords(self, frame_indices: list[int]) -> torch.Tensor:
         """Load coordinates for given frame indices.
 
         Returns (T, n_atoms, 3) float32 tensor in Angstrom.
         """
-        if self._coords is None:
-            data = np.load(self.coords_path)
-            self._coords = data["coords"]  # (total_frames, n_atoms, 3), Angstrom
+        self._coords, _ = self._load_coords_data()
         selected = self._coords[frame_indices]  # (T, n_atoms, 3)
         return torch.from_numpy(selected.copy()).float()
 
@@ -79,12 +92,9 @@ class SystemInfo:
     @property
     def observed_atom_mask(self) -> torch.Tensor:
         """(n_atoms,) bool — True for atoms resolved in reference."""
-        ref = self.load_ref_data()
-        if "observed_atom_mask" in ref:
-            # May come from the coords npz
-            data = np.load(self.coords_path)
-            if "observed_atom_mask" in data:
-                return torch.from_numpy(data["observed_atom_mask"]).bool()
+        _, coords_meta = self._load_coords_data()
+        if "observed_atom_mask" in coords_meta:
+            return torch.from_numpy(coords_meta["observed_atom_mask"]).bool()
         return torch.ones(self.n_atoms, dtype=torch.bool)
 
     @property

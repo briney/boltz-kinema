@@ -18,7 +18,7 @@ import argparse
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -106,15 +106,72 @@ class InferenceConfig:
     seed: int = 42
 
 
-def _build_config(cfg: DictConfig) -> InferenceConfig:
-    """Build InferenceConfig from OmegaConf."""
+def _normalize_legacy_inference_keys(raw_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Map deprecated config keys to canonical schema with warnings."""
+    cfg = dict(raw_cfg)
+
+    if "coarse_n_frames" in cfg:
+        coarse_n_frames = cfg.pop("coarse_n_frames")
+        if "generation_window" not in cfg:
+            cfg["generation_window"] = int(coarse_n_frames)
+        logger.warning(
+            "Config key 'coarse_n_frames' is deprecated; use 'generation_window'."
+        )
+
+    if "fine_interp_factor" in cfg:
+        fine_interp_factor = float(cfg.pop("fine_interp_factor"))
+        if fine_interp_factor <= 0:
+            raise ValueError(
+                f"fine_interp_factor must be > 0, got {fine_interp_factor}"
+            )
+        if "fine_dt_ns" not in cfg:
+            coarse_dt = float(cfg.get("coarse_dt_ns", InferenceConfig.coarse_dt_ns))
+            cfg["fine_dt_ns"] = coarse_dt / fine_interp_factor
+        logger.warning(
+            "Config key 'fine_interp_factor' is deprecated; use 'fine_dt_ns'."
+        )
+
+    return cfg
+
+
+def _build_config(cfg: DictConfig, *, strict: bool = True) -> InferenceConfig:
+    """Build ``InferenceConfig`` from OmegaConf with optional strict schema checks."""
+    raw = OmegaConf.to_container(cfg, resolve=True)
+    if not isinstance(raw, dict):
+        raise TypeError(
+            f"Expected inference config to deserialize to a mapping, got {type(raw).__name__}"
+        )
+    normalized = _normalize_legacy_inference_keys(raw)
+
+    config_fields = {f.name: f for f in fields(InferenceConfig)}
+    unknown_keys = sorted(set(normalized) - set(config_fields))
+    if strict and unknown_keys:
+        raise ValueError(
+            "Unknown inference config keys: "
+            + ", ".join(unknown_keys)
+            + ". Update keys to match InferenceConfig."
+        )
+
+    missing_required = sorted(
+        name
+        for name, f in config_fields.items()
+        if f.default is MISSING
+        and f.default_factory is MISSING
+        and name not in normalized
+    )
+    if strict and missing_required:
+        raise ValueError(
+            "Missing required inference config keys: " + ", ".join(missing_required)
+        )
+
     kwargs: dict[str, Any] = {}
-    for f in InferenceConfig.__dataclass_fields__:
-        if f in cfg:
-            val = cfg[f]
-            if hasattr(val, "items"):
-                val = {str(k): v for k, v in val.items()}
-            kwargs[f] = val
+    for name in config_fields:
+        if name not in normalized:
+            continue
+        value = normalized[name]
+        if isinstance(value, dict):
+            value = {str(k): v for k, v in value.items()}
+        kwargs[name] = value
     return InferenceConfig(**kwargs)
 
 

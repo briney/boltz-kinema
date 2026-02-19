@@ -266,6 +266,43 @@ class TestBondLoss:
         loss = loss_fn.bond_loss(x, batch, target_mask)
         assert loss.item() == pytest.approx(0.0, abs=1e-6)
 
+    def test_bond_mask_excludes_padded_slots(self, loss_fn: BoltzKinemaLoss):
+        """Padded bond slots should not contribute to numerator or denominator."""
+        x = torch.zeros(1, 2, M, 3)
+        # Real bond error: |3.0 - 1.5|^2 = 2.25
+        x[:, :, 1, 0] = 3.0
+        # Padded slot has large error but is masked out.
+        x[:, :, 3, 0] = 10.0
+
+        batch = {
+            "bond_indices": torch.tensor([[[0, 1], [2, 3]]]),
+            "bond_lengths": torch.tensor([[1.5, 0.0]]),
+            "bond_mask": torch.tensor([[True, False]]),
+        }
+        target_mask = torch.ones(1, 2, dtype=torch.bool)
+        loss = loss_fn.bond_loss(x, batch, target_mask)
+        assert loss.item() == pytest.approx(2.25, abs=1e-6)
+
+    def test_bond_loss_scale_invariant_to_padding(self, loss_fn: BoltzKinemaLoss):
+        """Adding masked padded bonds should not change the loss scale."""
+        x = torch.zeros(1, 3, M, 3)
+        x[:, :, 1, 0] = 3.0
+        target_mask = torch.ones(1, 3, dtype=torch.bool)
+
+        compact = {
+            "bond_indices": torch.tensor([[[0, 1]]]),
+            "bond_lengths": torch.tensor([[1.5]]),
+        }
+        padded = {
+            "bond_indices": torch.tensor([[[0, 1], [0, 0], [0, 0], [0, 0]]]),
+            "bond_lengths": torch.tensor([[1.5, 0.0, 0.0, 0.0]]),
+            "bond_mask": torch.tensor([[True, False, False, False]]),
+        }
+
+        compact_loss = loss_fn.bond_loss(x, compact, target_mask)
+        padded_loss = loss_fn.bond_loss(x, padded, target_mask)
+        assert compact_loss.item() == pytest.approx(padded_loss.item(), abs=1e-6)
+
 
 # ---------------------------------------------------------------------------
 # smooth_lddt_loss

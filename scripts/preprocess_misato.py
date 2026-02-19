@@ -31,13 +31,12 @@ import mdtraj
 import numpy as np
 
 from boltzkinema.data.preprocessing import (
-    align_trajectory,
     build_observation_mask,
-    check_ligand_valency,
     convert_trajectory,
     extract_atom_metadata,
     save_reference_structure,
 )
+from boltzkinema.data.units import infer_coordinate_unit
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +69,7 @@ def preprocess_one(
     system: dict,
     output_dir: Path,
     ref_dir: Path,
+    coords_unit: str,
 ) -> dict | None:
     """Preprocess a single MISATO system."""
     system_id = system["system_id"]
@@ -80,7 +80,14 @@ def preprocess_one(
             grp = f[system["pdb_id"]]
 
             # Extract coordinates (may be in nm or A depending on MISATO version)
-            coords = np.array(grp["coordinates"])  # (n_frames, n_atoms, 3)
+            coords_ds = grp["coordinates"]
+            coords = np.array(coords_ds)  # (n_frames, n_atoms, 3)
+            unit_metadata = {
+                f"group.{k}": v for k, v in grp.attrs.items()
+            }
+            unit_metadata.update({
+                f"coordinates.{k}": v for k, v in coords_ds.attrs.items()
+            })
 
             # Check for topology/PDB data
             if "topology" in grp:
@@ -100,9 +107,28 @@ def preprocess_one(
             # (MISATO ligands may need RDKit validation)
 
             # Build mdtraj trajectory for alignment
-            # MISATO coordinates are typically in Angstrom
-            # Convert to nm for mdtraj (which expects nm internally)
-            coords_nm = coords / 10.0 if coords.max() > 100.0 else coords
+            # Convert to nm for mdtraj (which expects nm internally).
+            if coords_unit == "auto":
+                inferred_unit, confidence, reason = infer_coordinate_unit(
+                    coords,
+                    metadata=unit_metadata,
+                )
+                logger.warning(
+                    "Inferred coordinate unit for %s: %s (confidence=%.2f, %s)",
+                    system_id,
+                    inferred_unit,
+                    confidence,
+                    reason,
+                )
+            else:
+                inferred_unit = coords_unit
+                logger.info(
+                    "Using --coords-unit=%s for %s",
+                    inferred_unit,
+                    system_id,
+                )
+
+            coords_nm = coords if inferred_unit == "nm" else (coords / 10.0)
             traj = mdtraj.Trajectory(
                 xyz=coords_nm.astype(np.float32),
                 topology=mdtraj.load(str(tmp_pdb)).topology,
@@ -156,6 +182,15 @@ def main() -> None:
     parser.add_argument("--output-dir", type=str, default="data/processed/coords")
     parser.add_argument("--ref-dir", type=str, default="data/processed/refs")
     parser.add_argument("--manifest-out", type=str, default="data/processed/misato_manifest.json")
+    parser.add_argument(
+        "--coords-unit",
+        choices=("auto", "nm", "angstrom"),
+        default="auto",
+        help=(
+            "Coordinate unit for input HDF5 coordinates. "
+            "'auto' uses metadata + geometric heuristics."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -165,7 +200,12 @@ def main() -> None:
 
     manifest_entries = []
     for system in systems:
-        entry = preprocess_one(system, Path(args.output_dir), Path(args.ref_dir))
+        entry = preprocess_one(
+            system,
+            Path(args.output_dir),
+            Path(args.ref_dir),
+            args.coords_unit,
+        )
         if entry is not None:
             manifest_entries.append(entry)
 

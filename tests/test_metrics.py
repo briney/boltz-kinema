@@ -410,3 +410,26 @@ class TestUnbindingPrecisionRecall:
         assert result["precision"] == 0.0
         assert result["recall"] == 0.0
         assert result["f1"] == 0.0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+class TestCudaTensorSafety:
+    def test_pairwise_rmsd_cuda_input(self):
+        traj = torch.randn(6, 12, 3, device="cuda")
+        out = pairwise_rmsd(traj)
+        assert isinstance(out, np.ndarray)
+        assert out.shape == (6, 6)
+
+    def test_w2_distance_cuda_input(self):
+        pred = torch.randn(6, 12, 3, device="cuda")
+        gt = torch.randn(6, 12, 3, device="cuda")
+        val = w2_distance(pred, gt, n_samples=256)
+        assert isinstance(val, float)
+
+    def test_interaction_map_similarity_cuda_input(self):
+        pred = torch.randn(6, 12, 3, device="cuda")
+        gt = torch.randn(6, 12, 3, device="cuda")
+        mol_types = torch.zeros(12, dtype=torch.long, device="cuda")
+        mol_types[-3:] = 3
+        val = interaction_map_similarity(pred, gt, mol_types)
+        assert isinstance(val, float)

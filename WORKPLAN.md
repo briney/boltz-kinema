@@ -362,14 +362,14 @@ These three items are treated as a stabilization gate before all other work.
 
 ## 8. Deliverables Checklist
 
-- [ ] P1 atom window padding/trimming fix + tests
-- [ ] P2 sampler loop fix + tests
-- [ ] P3 unified checkpoint IO with `.safetensors` support + tests
-- [ ] P4 observed mask fix + tests
-- [ ] P5 MISATO unit handling hardening + tests
-- [ ] P6 bond mask in collator/loss + tests
-- [ ] P7 metrics CPU conversion helper + CUDA-safe tests
-- [ ] P8 strict inference config schema + updated YAML
+- [x] P1 atom window padding/trimming fix + tests
+- [x] P2 sampler loop fix + tests
+- [x] P3 unified checkpoint IO with `.safetensors` support + tests
+- [x] P4 observed mask fix + tests
+- [x] P5 MISATO unit handling hardening + tests
+- [x] P6 bond mask in collator/loss + tests
+- [x] P7 metrics CPU conversion helper + CUDA-safe tests
+- [x] P8 strict inference config schema + updated YAML
 - [ ] P9 dataset path precedence implementation + docs/tests
 - [ ] P10 dataset sampling/index correctness and reproducibility updates + tests
 - [ ] P11 implement or remove dead sampler knobs + tests/docs

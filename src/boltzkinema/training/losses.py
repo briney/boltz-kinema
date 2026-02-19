@@ -267,6 +267,7 @@ class BoltzKinemaLoss(nn.Module):
         idx_i = batch["bond_indices"][..., 0]  # (B, n_bonds)
         idx_j = batch["bond_indices"][..., 1]  # (B, n_bonds)
         ref_lengths = batch["bond_lengths"]  # (B, n_bonds)
+        bond_mask = batch.get("bond_mask")
 
         B, T, M, _ = x_pred.shape
 
@@ -281,10 +282,17 @@ class BoltzKinemaLoss(nn.Module):
 
         pred_lengths = (xi - xj).norm(dim=-1)  # (B, T, n_bonds)
 
+        if bond_mask is None:
+            valid_bond_mask = torch.ones_like(ref_lengths, dtype=torch.bool)
+        else:
+            valid_bond_mask = bond_mask.bool()
+
         frame_mask = target_frame_mask.unsqueeze(-1).float()  # (B, T, 1)
+        bond_weight = valid_bond_mask.unsqueeze(1).float()  # (B, 1, n_bonds)
+        weight = frame_mask * bond_weight  # (B, T, n_bonds)
         sq = (pred_lengths - ref_lengths.unsqueeze(1)) ** 2
-        n_denom = frame_mask.sum() * sq.shape[-1]
-        return (sq * frame_mask).sum() / n_denom.clamp(min=1.0)
+        n_denom = weight.sum()
+        return (sq * weight).sum() / n_denom.clamp(min=1.0)
 
     def smooth_lddt_loss(
         self,

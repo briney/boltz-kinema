@@ -14,6 +14,10 @@ MOL_TYPE_LIGAND = 3
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _to_numpy_cpu(t: torch.Tensor) -> np.ndarray:
+    """Detach tensor and convert to a NumPy array on CPU."""
+    return t.detach().cpu().numpy()
+
 
 def _compute_rmsf(trajectory: torch.Tensor) -> torch.Tensor:
     """Per-atom RMSF from a trajectory tensor.
@@ -101,7 +105,7 @@ def pairwise_rmsd(
     diff = traj.unsqueeze(1) - traj.unsqueeze(0)
     # Mean over atoms and xyz, then sqrt -> (N, N)
     rmsd = torch.sqrt((diff ** 2).sum(dim=-1).mean(dim=-1) + 1e-8)
-    return rmsd.numpy()
+    return _to_numpy_cpu(rmsd)
 
 
 def ca_rmsf_correlation(
@@ -130,7 +134,7 @@ def ca_rmsf_correlation(
     # Build combined mask for CA atoms
     ca_mask = np.array([n.strip() == "CA" for n in atom_names_arr])
     if atom_mask is not None:
-        ca_mask = ca_mask & atom_mask.detach().cpu().numpy()
+        ca_mask = ca_mask & _to_numpy_cpu(atom_mask.bool())
 
     if ca_mask.sum() < 2:
         return 0.0
@@ -140,8 +144,8 @@ def ca_rmsf_correlation(
     pred_ca = pred_traj.detach().float()[:, ca_idx]
     gt_ca = gt_traj.detach().float()[:, ca_idx]
 
-    rmsf_pred = _compute_rmsf(pred_ca).numpy()
-    rmsf_gt = _compute_rmsf(gt_ca).numpy()
+    rmsf_pred = _to_numpy_cpu(_compute_rmsf(pred_ca))
+    rmsf_gt = _to_numpy_cpu(_compute_rmsf(gt_ca))
 
     # Pearson correlation
     r = float(np.corrcoef(rmsf_pred, rmsf_gt)[0, 1])
@@ -191,7 +195,7 @@ def w2_distance(
         # (T, M, M) pairwise distances
         d = torch.cdist(traj, traj)
         # Extract upper triangle for each frame and flatten
-        return d[:, idx_i, idx_j].reshape(-1).numpy()
+        return _to_numpy_cpu(d[:, idx_i, idx_j].reshape(-1))
 
     d_pred = _flat_dists(pred)
     d_gt = _flat_dists(gt)
@@ -255,7 +259,7 @@ def interaction_map_similarity(
         # (T, n_prot, n_lig) distances
         dists = torch.cdist(prot_coords.float(), lig_coords.float())
         contacts = (dists < contact_threshold).float().mean(dim=0)  # (n_prot, n_lig)
-        return contacts.numpy().ravel()
+        return _to_numpy_cpu(contacts).ravel()
 
     freq_pred = _contact_freq(pred_traj.detach())
     freq_gt = _contact_freq(gt_traj.detach())
@@ -312,7 +316,7 @@ def physical_stability(
             "Install it with: conda install -c conda-forge openmm"
         )
 
-    traj = trajectory.detach().float().numpy()
+    traj = _to_numpy_cpu(trajectory.float())
     T = traj.shape[0]
 
     if frame_indices is None:

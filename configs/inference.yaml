@@ -37,9 +37,10 @@ dt_ns: 1.0                 # timestep between frames in nanoseconds
 
 # === Hierarchical sampling ===
 hierarchical: false
-coarse_n_frames: 8
 coarse_dt_ns: 10.0
-fine_interp_factor: 4
+fine_dt_ns: 2.5
+generation_window: 8
+history_window: 10
 
 # === Paths ===
 checkpoint: checkpoints/phase1/step_XXXXX

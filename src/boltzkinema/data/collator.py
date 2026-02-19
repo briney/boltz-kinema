@@ -63,6 +63,7 @@ class BoltzKinemaCollator:
             )
             batch["bond_indices"] = torch.zeros(B, max_bonds, 2, dtype=torch.long)
             batch["bond_lengths"] = torch.zeros(B, max_bonds)
+            batch["bond_mask"] = torch.zeros(B, max_bonds, dtype=torch.bool)
 
         # Fill in per-sample data
         for i, s in enumerate(samples):
@@ -83,6 +84,7 @@ class BoltzKinemaCollator:
                 nb = s["bond_indices"].shape[0]
                 batch["bond_indices"][i, :nb] = s["bond_indices"]
                 batch["bond_lengths"][i, :nb] = s["bond_lengths"]
+                batch["bond_mask"][i, :nb] = True
 
         return batch
 

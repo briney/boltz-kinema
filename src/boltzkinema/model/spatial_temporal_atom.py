@@ -2,17 +2,101 @@
 
 from __future__ import annotations
 
-from functools import partial
-
 import torch
 import torch.nn as nn
 
 import boltz.model.layers.initialize as init
-from boltz.model.modules.encodersv2 import get_indexing_matrix, single_to_keys
 from boltz.model.modules.transformersv2 import AtomTransformer
 from boltz.model.modules.utils import LinearNoBias
 
 from boltzkinema.model.temporal_attention import TemporalAttentionWithDecay
+
+
+def _num_windows(n_items: int, window_size: int) -> int:
+    """Return ceil(n_items / window_size) for positive inputs."""
+    if n_items <= 0:
+        raise ValueError(f"n_items must be positive, got {n_items}")
+    if window_size <= 0:
+        raise ValueError(f"window_size must be positive, got {window_size}")
+    return (n_items + window_size - 1) // window_size
+
+
+def _pad_or_trim_dim(
+    x: torch.Tensor,
+    target: int,
+    dim: int,
+    pad_value: float | bool = 0.0,
+) -> torch.Tensor:
+    """Pad or trim tensor ``x`` along ``dim`` to ``target`` length."""
+    current = x.shape[dim]
+    if current == target:
+        return x
+
+    if current > target:
+        slices = [slice(None)] * x.dim()
+        slices[dim] = slice(0, target)
+        return x[tuple(slices)]
+
+    pad_shape = list(x.shape)
+    pad_shape[dim] = target - current
+    pad = x.new_full(pad_shape, pad_value)
+    return torch.cat((x, pad), dim=dim)
+
+
+def _to_windowed_keys(
+    keys: torch.Tensor,
+    *,
+    batch_size: int,
+    n_heads: int,
+    n_windows: int,
+) -> torch.Tensor:
+    """Normalize key tensor layouts to ``(B*NW, H, D)`` and align NW."""
+    if keys.dim() == 4:
+        if keys.shape[0] != batch_size:
+            raise ValueError(
+                f"Unexpected key batch dim {keys.shape[0]} != {batch_size}"
+            )
+        if keys.shape[2] == n_heads:
+            key_windows = keys
+        elif keys.shape[1] == n_heads:
+            key_windows = keys.transpose(1, 2)
+        else:
+            raise ValueError(
+                f"Could not infer key head dimension in shape {tuple(keys.shape)}"
+            )
+    elif keys.dim() == 3:
+        if keys.shape[0] == batch_size:
+            if keys.shape[1] % n_heads != 0:
+                raise ValueError(
+                    f"Key tensor shape {tuple(keys.shape)} is not divisible by n_heads={n_heads}"
+                )
+            key_windows = keys.reshape(
+                batch_size,
+                keys.shape[1] // n_heads,
+                n_heads,
+                keys.shape[2],
+            )
+        else:
+            if keys.shape[1] != n_heads or keys.shape[0] % batch_size != 0:
+                raise ValueError(
+                    f"Could not infer key window layout from shape {tuple(keys.shape)}"
+                )
+            key_windows = keys.reshape(
+                batch_size,
+                keys.shape[0] // batch_size,
+                n_heads,
+                keys.shape[2],
+            )
+    else:
+        raise ValueError(f"Unsupported key tensor rank: {keys.dim()}")
+
+    key_windows = _pad_or_trim_dim(
+        key_windows,
+        target=n_windows,
+        dim=1,
+        pad_value=0.0,
+    )
+    return key_windows.reshape(batch_size * n_windows, n_heads, key_windows.shape[-1])
 
 
 class SpatialTemporalAtomEncoder(nn.Module):
@@ -114,10 +198,12 @@ class SpatialTemporalAtomEncoder(nn.Module):
             Key-gathering function (passed through).
         """
         B_orig = q.shape[0]
-        M = q.shape[1]
+        M_orig = q.shape[1]
         D = q.shape[2]
         W = self.atom_encoder.attn_window_queries
         H = self.atom_encoder.attn_window_keys
+        NW = _num_windows(M_orig, W)
+        M = NW * W
 
         # --- Expand per frame ---
         if self.structure_prediction:
@@ -127,26 +213,39 @@ class SpatialTemporalAtomEncoder(nn.Module):
         c = c.repeat_interleave(T, 0)  # (B*T, M, D)
         atom_mask = feats["atom_pad_mask"].bool()  # (B, M)
         atom_mask = atom_mask.repeat_interleave(T, 0)  # (B*T, M)
+        q = _pad_or_trim_dim(q, target=M, dim=1, pad_value=0.0)
+        c = _pad_or_trim_dim(c, target=M, dim=1, pad_value=0.0)
+        atom_mask = _pad_or_trim_dim(atom_mask, target=M, dim=1, pad_value=False)
 
         B = B_orig * T  # effective batch
-        NW = M // W
 
         # --- Window ---
-        q_win = q.view(B * NW, W, D)
-        c_win = c.view(B * NW, W, D)
-        mask_win = atom_mask.view(B * NW, W)
+        q_win = q.reshape(B * NW, W, D)
+        c_win = c.reshape(B * NW, W, D)
+        mask_win = atom_mask.reshape(B * NW, W)
 
         # --- Expand and split bias ---
         # atom_enc_bias: (B_orig, K, W, H, depth*heads)
         bias_expanded = atom_enc_bias.repeat_interleave(T, 0)  # (B*T, K, W, H, depth*heads)
-        bias_expanded = bias_expanded.view(B * NW, W, H, -1)  # (B*T*NW, W, H, depth*heads)
+        bias_expanded = _pad_or_trim_dim(
+            bias_expanded, target=NW, dim=1, pad_value=0.0
+        )
+        bias_expanded = bias_expanded.reshape(B * NW, W, H, -1)  # (B*T*NW, W, H, depth*heads)
         layers = self.atom_encoder.diffusion_transformer.layers
         L = len(layers)
         heads_per_layer = bias_expanded.shape[-1] // L
-        bias_split = bias_expanded.view(B * NW, W, H, L, heads_per_layer)
+        bias_split = bias_expanded.reshape(B * NW, W, H, L, heads_per_layer)
 
         # --- Build to_keys_new (same as AtomTransformer.forward) ---
-        to_keys_new = lambda x: to_keys(x.view(B, NW * W, -1)).view(B * NW, H, -1)
+        def to_keys_new(x: torch.Tensor) -> torch.Tensor:
+            x_flat = x.reshape(B, M, -1)[:, :M_orig]
+            keys = to_keys(x_flat)
+            return _to_windowed_keys(
+                keys,
+                batch_size=B,
+                n_heads=H,
+                n_windows=NW,
+            )
 
         # --- Layer loop: spatial → temporal ---
         for i, spatial_layer in enumerate(layers):
@@ -157,7 +256,7 @@ class SpatialTemporalAtomEncoder(nn.Module):
             )
 
             # Temporal attention: unwindow → reshape → temporal → reshape → rewindow
-            q_flat = q_win.view(B, M, D)  # (B*T, M, D)
+            q_flat = q_win.reshape(B, M, D)  # (B*T, M, D)
             q_temp = (
                 q_flat
                 .view(B_orig, T, M, D)
@@ -171,10 +270,11 @@ class SpatialTemporalAtomEncoder(nn.Module):
                 .permute(0, 2, 1, 3)
                 .reshape(B_orig * T, M, D)
             )
-            q_win = q_flat.view(B * NW, W, D)
+            q_win = q_flat.reshape(B * NW, W, D)
 
         # --- Unwindow ---
-        q = q_win.view(B, M, D)  # (B*T, M, D)
+        q = q_win.reshape(B, M, D)[:, :M_orig]  # (B*T, M_orig, D)
+        c = c[:, :M_orig]
 
         # --- Aggregate atom → token ---
         with torch.autocast("cuda", enabled=False):
@@ -290,27 +390,42 @@ class SpatialTemporalAtomDecoder(nn.Module):
         atom_mask = atom_mask.repeat_interleave(T, 0)
 
         # --- Decomposed atom decoder with temporal attention ---
-        M = q.shape[1]
+        M_orig = q.shape[1]
         D = q.shape[2]
         W = self.atom_decoder.attn_window_queries
         H = self.atom_decoder.attn_window_keys
         B = B_orig * T
-        NW = M // W
+        NW = _num_windows(M_orig, W)
+        M = NW * W
+        q = _pad_or_trim_dim(q, target=M, dim=1, pad_value=0.0)
+        c = _pad_or_trim_dim(c, target=M, dim=1, pad_value=0.0)
+        atom_mask = _pad_or_trim_dim(atom_mask, target=M, dim=1, pad_value=False)
 
         # Window
-        q_win = q.view(B * NW, W, D)
-        c_win = c.view(B * NW, W, D)
-        mask_win = atom_mask.view(B * NW, W)
+        q_win = q.reshape(B * NW, W, D)
+        c_win = c.reshape(B * NW, W, D)
+        mask_win = atom_mask.reshape(B * NW, W)
 
         # Expand and split bias
         bias_expanded = atom_dec_bias.repeat_interleave(T, 0)
-        bias_expanded = bias_expanded.view(B * NW, W, H, -1)
+        bias_expanded = _pad_or_trim_dim(
+            bias_expanded, target=NW, dim=1, pad_value=0.0
+        )
+        bias_expanded = bias_expanded.reshape(B * NW, W, H, -1)
         layers = self.atom_decoder.diffusion_transformer.layers
         L = len(layers)
         heads_per_layer = bias_expanded.shape[-1] // L
-        bias_split = bias_expanded.view(B * NW, W, H, L, heads_per_layer)
+        bias_split = bias_expanded.reshape(B * NW, W, H, L, heads_per_layer)
 
-        to_keys_new = lambda x: to_keys(x.view(B, NW * W, -1)).view(B * NW, H, -1)
+        def to_keys_new(x: torch.Tensor) -> torch.Tensor:
+            x_flat = x.reshape(B, M, -1)[:, :M_orig]
+            keys = to_keys(x_flat)
+            return _to_windowed_keys(
+                keys,
+                batch_size=B,
+                n_heads=H,
+                n_windows=NW,
+            )
 
         # Layer loop: spatial → temporal
         for i, spatial_layer in enumerate(layers):
@@ -321,7 +436,7 @@ class SpatialTemporalAtomDecoder(nn.Module):
             )
 
             # Temporal attention
-            q_flat = q_win.view(B, M, D)
+            q_flat = q_win.reshape(B, M, D)
             q_temp = (
                 q_flat
                 .view(B_orig, T, M, D)
@@ -335,10 +450,10 @@ class SpatialTemporalAtomDecoder(nn.Module):
                 .permute(0, 2, 1, 3)
                 .reshape(B_orig * T, M, D)
             )
-            q_win = q_flat.view(B * NW, W, D)
+            q_win = q_flat.reshape(B * NW, W, D)
 
         # Unwindow
-        q = q_win.view(B, M, D)
+        q = q_win.reshape(B, M, D)[:, :M_orig]
 
         # Atom features → coordinate update
         r_update = self.atom_feat_to_atom_pos_update(q)

@@ -76,6 +76,10 @@ class EDMSampler:
         """
         if n_steps is None:
             n_steps = self.n_steps
+        if n_steps < 1:
+            raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        if n_steps == 1:
+            return torch.tensor([self.sigma_max, 0.0], dtype=torch.float32)
 
         inv_rho = 1.0 / self.rho
         steps = torch.arange(n_steps)
@@ -202,9 +206,13 @@ class EDMSampler:
         sigmas = self.get_schedule().to(x_cond.device)
         x_target = x_init
 
-        for k in range(self.n_steps - 1):
+        for k in range(self.n_steps):
             sigma_k = sigmas[k].item()
             sigma_next = sigmas[k + 1].item()
+            if sigma_k <= 0:
+                raise RuntimeError(
+                    "Encountered non-positive sigma before final denoising update."
+                )
 
             # Build batch and run model
             batch = self._build_batch(

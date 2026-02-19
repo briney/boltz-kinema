@@ -16,6 +16,10 @@ from omegaconf import DictConfig
 from boltzkinema.data.collator import BoltzKinemaCollator
 from boltzkinema.data.dataset import BoltzKinemaDataset
 from boltzkinema.model.boltzkinema import BoltzKinema
+from boltzkinema.model.checkpoint_io import (
+    find_model_weights_file,
+    load_model_state_dict,
+)
 from boltzkinema.model.weight_loading import load_boltz2_weights
 from boltzkinema.training.losses import BoltzKinemaLoss
 from boltzkinema.training.scheduler import get_warmup_constant_scheduler
@@ -353,15 +357,12 @@ def _load_checkpoint(
         # We need to load the model state from the Accelerate checkpoint
         # Accelerate checkpoints store model in a pytorch_model.bin or
         # model.safetensors file inside the checkpoint directory
-        model_files = list(Path(resume_dir).glob("pytorch_model*.bin")) + \
-                      list(Path(resume_dir).glob("model*.safetensors"))
+        model_file = find_model_weights_file(resume_dir)
 
-        if model_files:
+        if model_file is not None:
             # Use Accelerate's unwrapped model for direct weight loading
             unwrapped = accelerator.unwrap_model(model)
-            state = torch.load(
-                model_files[0], map_location="cpu", weights_only=True
-            )
+            state = load_model_state_dict(model_file, map_location="cpu")
             unwrapped.load_state_dict(state, strict=True)
             accelerator.print("Loaded model weights (fresh optimizer)")
         else:

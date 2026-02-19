@@ -18,15 +18,23 @@ import argparse
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from boltzkinema.model.checkpoint_io import (
+    find_model_weights_file,
+    load_model_state_dict,
+)
+
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from boltzkinema.inference.sampler import EDMSampler
 
 
 # ------------------------------------------------------------------
@@ -153,19 +161,14 @@ def _build_model(config: InferenceConfig) -> torch.nn.Module:
     ckpt_dir = Path(ckpt_path)
     if ckpt_dir.is_dir():
         # Accelerate checkpoint directory
-        candidates = (
-            list(ckpt_dir.glob("pytorch_model*.bin"))
-            + list(ckpt_dir.glob("model*.safetensors"))
-        )
-        if not candidates:
+        model_file = find_model_weights_file(ckpt_dir)
+        if model_file is None:
             raise FileNotFoundError(
                 f"No model weights found in checkpoint directory: {ckpt_path}"
             )
-        state = torch.load(candidates[0], map_location="cpu", weights_only=True)
+        state = load_model_state_dict(model_file, map_location="cpu")
     else:
-        state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-        if "state_dict" in state:
-            state = state["state_dict"]
+        state = load_model_state_dict(ckpt_path, map_location="cpu")
 
     model.load_state_dict(state, strict=True)
     logger.info("Loaded model from %s", ckpt_path)
@@ -312,7 +315,7 @@ def _load_initial_structure(
 # ------------------------------------------------------------------
 
 def _generate_flat(
-    sampler: "EDMSampler",
+    sampler: EDMSampler,
     initial_structure: torch.Tensor,
     config: InferenceConfig,
     s_trunk: torch.Tensor,
@@ -330,8 +333,6 @@ def _generate_flat(
     trajectory : (N_frames, M, 3)
     timestamps : (N_frames,)
     """
-    from boltzkinema.inference.sampler import EDMSampler
-
     device = initial_structure.device
     trajectory: list[torch.Tensor] = [initial_structure]
     timestamps: list[float] = [0.0]

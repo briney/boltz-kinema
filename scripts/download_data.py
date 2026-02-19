@@ -17,8 +17,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import logging
+import shutil
 import subprocess
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -91,29 +94,59 @@ def _download_zenodo_files(
 
 
 def download_atlas(output_dir: Path) -> None:
-    """Download ATLAS dataset (~30 GB).
+    """Download ATLAS dataset (~30 GB) via the DSIMB REST API.
 
     Source: https://www.dsimb.inserm.fr/ATLAS/
     ~1,500 protein chains, 3x100ns trajectories each.
     Format: GROMACS .xtc trajectories + .gro topology.
     """
+    base_url = "https://www.dsimb.inserm.fr/ATLAS"
     atlas_dir = output_dir / "atlas"
     atlas_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Downloading ATLAS dataset to %s", atlas_dir)
-    logger.info("Using wget for recursive ATLAS download...")
-    subprocess.run(
-        [
-            "wget",
-            "-r",
-            "-np",
-            "-nH",
-            "--cut-dirs=1",
-            "-P",
-            str(atlas_dir),
-            "https://www.dsimb.inserm.fr/ATLAS/database/",
-        ],
-        check=True,
-    )
+
+    # 1. Fetch the chain list from the parsable endpoint
+    logger.info("Fetching ATLAS chain list...")
+    resp = requests.get(f"{base_url}/api/parsable", timeout=60)
+    resp.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        chain_ids = (
+            zf.read("ATLAS_pdb.txt").decode().strip().splitlines()
+        )
+    logger.info("Found %d chains in ATLAS", len(chain_ids))
+
+    # 2. Download per-chain protein archives
+    for chain_id in tqdm(chain_ids, desc="ATLAS chains"):
+        chain_dir = atlas_dir / chain_id
+        complete_marker = chain_dir / ".complete"
+
+        # Skip already-completed chains
+        if complete_marker.exists():
+            continue
+
+        chain_dir.mkdir(parents=True, exist_ok=True)
+
+        url = f"{base_url}/api/ATLAS/protein/{chain_id}"
+        try:
+            resp = requests.get(url, timeout=120)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            logger.warning("Failed to download %s: %s", chain_id, exc)
+            continue
+
+        # Extract the zip into the chain directory
+        try:
+            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+                zf.extractall(chain_dir)
+        except zipfile.BadZipFile:
+            logger.warning("Bad zip for %s, skipping", chain_id)
+            continue
+
+        # Mark chain as complete for resumability
+        complete_marker.touch()
+
+        # Polite delay between requests
+        time.sleep(0.2)
 
 
 def download_misato(output_dir: Path) -> None:

@@ -127,7 +127,9 @@ class BoltzKinema(nn.Module):
 
         return feats
 
-    def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
+    def forward(
+        self, batch: dict[str, Any], add_noise: bool = True,
+    ) -> dict[str, Any]:
         """Forward pass.
 
         Parameters
@@ -145,6 +147,10 @@ class BoltzKinema(nn.Module):
               - token_pad_mask : (B, N)
               - atom_to_token : (B, M, N)
               - feats : dict of reference structure features
+        add_noise : bool
+            If True (default, training), sample noise and add to coords.
+            If False (inference), treat coords as already at the noise
+            level specified by sigma.
 
         Returns
         -------
@@ -169,9 +175,14 @@ class BoltzKinema(nn.Module):
             )
         )
 
-        # 3. Add per-frame noise (conditioning frames with sigma=0 are untouched)
-        eps = torch.randn_like(coords)
-        x_noisy = coords + sigma[..., None, None] * eps
+        # 3. Noise handling
+        if add_noise:
+            # Training: add per-frame noise (sigma=0 conditioning frames untouched)
+            eps = torch.randn_like(coords)
+            x_noisy = coords + sigma[..., None, None] * eps
+        else:
+            # Inference: coords are already at the correct noise level
+            x_noisy = coords
 
         # 4. EDM scale input
         r_noisy = self.edm.scale_input(x_noisy, sigma)  # (B, T, M, 3)

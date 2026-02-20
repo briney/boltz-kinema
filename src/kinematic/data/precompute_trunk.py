@@ -165,6 +165,8 @@ def prepare_features_for_system(
     residue_indices = ref_data["residue_indices"]
     chain_ids = ref_data["chain_ids"]
     mol_types = ref_data["mol_types"]
+    atom_names = ref_data["atom_names"]        # (n_atoms,) str e.g. "CA"
+    elements = ref_data["elements"]            # (n_atoms,) str e.g. "C"
 
     # Determine number of tokens (unique residues)
     n_tokens = int(residue_indices.max()) + 1
@@ -260,10 +262,34 @@ def prepare_features_for_system(
     feats["profile"] = torch.zeros(1, n_tokens, num_res_types, device=device)
 
     # Atom name/element features (for input embedder)
-    feats["ref_atom_name_chars"] = torch.zeros(
-        1, n_atoms, 4, dtype=torch.long, device=device
+    # Boltz-2 encodes atom names as 4 characters, each ord(c)-32, one-hot 64
+    name_chars = np.zeros((n_atoms, 4), dtype=np.int64)
+    for i, name in enumerate(atom_names):
+        chars = [ord(c) - 32 for c in str(name).strip()]
+        for j, c in enumerate(chars[:4]):
+            name_chars[i, j] = c
+    name_chars_t = torch.from_numpy(name_chars).to(device)
+    feats["ref_atom_name_chars"] = torch.nn.functional.one_hot(
+        name_chars_t, num_classes=64
+    ).float().unsqueeze(0)  # (1, n_atoms, 4, 64)
+
+    # Boltz-2 encodes elements by atomic number, one-hot 128
+    _element_to_z = {
+        "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7,
+        "O": 8, "F": 9, "Ne": 10, "Na": 11, "Mg": 12, "Al": 13,
+        "Si": 14, "P": 15, "S": 16, "Cl": 17, "Ar": 18, "K": 19,
+        "Ca": 20, "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29,
+        "Zn": 30, "Se": 34, "Br": 35, "I": 53,
+    }
+    elem_idx = np.array(
+        [_element_to_z.get(str(e).strip(), 0) for e in elements],
+        dtype=np.int64,
     )
-    feats["ref_element"] = torch.zeros(1, n_atoms, dtype=torch.long, device=device)
+    elem_t = torch.from_numpy(elem_idx).to(device)
+    feats["ref_element"] = torch.nn.functional.one_hot(
+        elem_t, num_classes=128
+    ).float().unsqueeze(0)  # (1, n_atoms, 128)
+
     feats["ref_charge"] = torch.zeros(1, n_atoms, device=device)
     feats["ref_chirality"] = torch.zeros(
         1, n_atoms, dtype=torch.long, device=device

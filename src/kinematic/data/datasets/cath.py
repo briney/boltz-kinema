@@ -4,7 +4,7 @@
 Force field: AMBER ff99SB-ildn, 300K, explicit TIP3P.
 Format: topology.pdb + trajs/*.cmprsd.xtc + dataset.json per system.
 
-NOTE: CATH1 (adaptive sampling) is excluded — its non-equilibrium
+NOTE: CATH1 (adaptive sampling) is excluded -- its non-equilibrium
 transition-state conformations conflict with noise-as-masking.
 
 Pipeline:
@@ -14,17 +14,10 @@ Pipeline:
   4. Build observation mask
   5. Unit conversion: nm -> A, ps -> ns
   6. Save coords .npz + reference structure .npz
-
-Usage:
-    python scripts/preprocess_cath.py \\
-        --input-dir data/raw/cath2 \\
-        --output-dir data/processed/coords \\
-        --ref-dir data/processed/refs
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import tempfile
@@ -34,18 +27,7 @@ from kinematic.data.preprocessing import (
     align_trajectory,
     remove_solvent,
 )
-try:
-    from scripts.preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
-except ImportError:
-    from preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
+from kinematic.data.preprocess_common import finalize_processed_system
 
 logger = logging.getLogger(__name__)
 
@@ -134,38 +116,3 @@ def preprocess_one(
     except Exception:
         logger.exception("Failed to process %s", system_id)
         return None
-
-
-def main() -> None:
-    import warnings
-    warnings.warn(
-        "scripts/preprocess_cath.py is deprecated. "
-        "Use 'kinematic preprocess cath' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    parser = argparse.ArgumentParser(description="Preprocess CATH2 dataset")
-    parser.add_argument("--input-dir", type=str, required=True)
-    parser.add_argument("--output-dir", type=str, default="data/processed/coords")
-    parser.add_argument("--ref-dir", type=str, default="data/processed/refs")
-    parser.add_argument("--manifest-out", type=str, default="data/processed/cath2_manifest.json")
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    systems = find_cath2_systems(Path(args.input_dir))
-    logger.info("Found %d CATH2 systems", len(systems))
-
-    manifest_entries = collect_manifest_entries(
-        systems,
-        lambda system: preprocess_one(
-            system,
-            Path(args.output_dir),
-            Path(args.ref_dir),
-        ),
-    )
-    write_manifest_entries(manifest_entries, args.manifest_out)
-
-
-if __name__ == "__main__":
-    main()

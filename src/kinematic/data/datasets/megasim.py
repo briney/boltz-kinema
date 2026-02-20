@@ -7,18 +7,10 @@ Format: topology.pdb + trajs/*.xtc + dataset.json per system.
 
 Mutant subsampling: select all 271 wildtypes + ~4,500 mutants
 (top/bottom 10% by deltaG + diverse-position representatives).
-
-Usage:
-    python scripts/preprocess_megasim.py \\
-        --input-dir data/raw/megasim \\
-        --output-dir data/processed/coords \\
-        --ref-dir data/processed/refs \\
-        --subsample-mutants
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import tempfile
@@ -30,18 +22,7 @@ from kinematic.data.preprocessing import (
     align_trajectory,
     remove_solvent,
 )
-try:
-    from scripts.preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
-except ImportError:
-    from preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
+from kinematic.data.preprocess_common import finalize_processed_system
 
 logger = logging.getLogger(__name__)
 
@@ -235,49 +216,3 @@ def preprocess_one(
     except Exception:
         logger.exception("Failed to process %s", system_id)
         return None
-
-
-def main() -> None:
-    import warnings
-    warnings.warn(
-        "scripts/preprocess_megasim.py is deprecated. "
-        "Use 'kinematic preprocess megasim' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    parser = argparse.ArgumentParser(description="Preprocess MegaSim dataset")
-    parser.add_argument("--input-dir", type=str, required=True)
-    parser.add_argument("--output-dir", type=str, default="data/processed/coords")
-    parser.add_argument("--ref-dir", type=str, default="data/processed/refs")
-    parser.add_argument("--manifest-out", type=str, default="data/processed/megasim_manifest.json")
-    parser.add_argument(
-        "--subsample-mutants",
-        action="store_true",
-        help="Subsample mutants to ~4,500 (default for Phase 1 training)",
-    )
-    parser.add_argument(
-        "--all-mutants",
-        action="store_true",
-        help="Keep all 21,458 mutants (for Phase 1.5 training)",
-    )
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    subsample = args.subsample_mutants or not args.all_mutants
-    systems = find_megasim_systems(Path(args.input_dir), subsample_mutants=subsample)
-    logger.info("Found %d MegaSim systems", len(systems))
-
-    manifest_entries = collect_manifest_entries(
-        systems,
-        lambda system: preprocess_one(
-            system,
-            Path(args.output_dir),
-            Path(args.ref_dir),
-        ),
-    )
-    write_manifest_entries(manifest_entries, args.manifest_out)
-
-
-if __name__ == "__main__":
-    main()

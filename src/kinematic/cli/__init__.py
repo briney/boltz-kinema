@@ -6,6 +6,7 @@ import click
 
 from kinematic.cli.download import download_training_data
 from kinematic.cli.precompute import precompute_trunk_embeddings
+from kinematic.cli.preprocess import preprocess
 from kinematic.cli.train import train
 
 
@@ -18,3 +19,4 @@ def cli() -> None:
 cli.add_command(train)
 cli.add_command(download_training_data)
 cli.add_command(precompute_trunk_embeddings)
+cli.add_command(preprocess)

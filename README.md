@@ -98,6 +98,23 @@ Available datasets:
 | MegaSim | 271 WT + 21,458 mutants | ~10 GB | Wildtype and mutant protein simulations |
 | DD-13M | 565 complexes, 26,612 trajectories | ~100 GB | Metadynamics ligand dissociation |
 
+### Preprocess raw data
+
+After downloading, preprocess each dataset into the standard training format:
+
+```bash
+# Preprocess individual datasets
+kinematic preprocess atlas --input-dir data/raw/atlas
+kinematic preprocess cath --input-dir data/raw/cath2
+kinematic preprocess octapeptides --input-dir data/raw/octapeptides
+kinematic preprocess misato --input-dir data/raw/misato --coords-unit auto
+kinematic preprocess megasim --input-dir data/raw/megasim --subsample-mutants
+kinematic preprocess mdposit --input-dir data/raw/dynarepo
+kinematic preprocess dd13m --input-dir data/raw/dd13m
+```
+
+Each subcommand accepts `--output-dir`, `--ref-dir`, and `--manifest-out` for controlling output locations. Run `kinematic preprocess <dataset> --help` for full options.
+
 ### Precompute trunk embeddings
 
 Before training, precompute the frozen Boltz-2 trunk representations (run once):
@@ -166,7 +183,7 @@ Each block in the diffusion module applies:
 
 ```
 src/kinematic/
-├── cli/            CLI commands (train, download-training-data)
+├── cli/            CLI commands (train, download-training-data, preprocess)
 ├── model/          Model modules (temporal attention, EDM, spatial-temporal blocks)
 ├── data/           Dataset, collator, trunk cache, preprocessing
 ├── training/       Trainer, losses, learning rate scheduler

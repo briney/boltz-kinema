@@ -10,38 +10,15 @@ Pipeline:
   4. Build observation mask
   5. Unit conversion: nm -> A, ps -> ns
   6. Save coords .npz + reference structure .npz
-
-Usage:
-    python scripts/preprocess_misato.py \\
-        --input-dir data/raw/misato \\
-        --output-dir data/processed/coords \\
-        --ref-dir data/processed/refs
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 import tempfile
 from pathlib import Path
 
-import h5py
-import mdtraj
-import numpy as np
-
-from kinematic.data.units import infer_coordinate_unit
-try:
-    from scripts.preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
-except ImportError:
-    from preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
+from kinematic.data.preprocess_common import finalize_processed_system
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +29,8 @@ def find_misato_systems(input_dir: Path) -> list[dict]:
     MISATO stores protein-ligand complexes in HDF5 format with
     per-system groups containing coordinates and topology.
     """
+    import h5py
+
     systems = []
     h5_files = sorted(input_dir.glob("*.h5")) + sorted(input_dir.glob("*.hdf5"))
 
@@ -77,6 +56,12 @@ def preprocess_one(
     coords_unit: str,
 ) -> dict | None:
     """Preprocess a single MISATO system."""
+    import h5py
+    import mdtraj
+    import numpy as np
+
+    from kinematic.data.units import infer_coordinate_unit
+
     system_id = system["system_id"]
     logger.info("Processing %s", system_id)
 
@@ -107,9 +92,6 @@ def preprocess_one(
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_pdb = Path(tmpdir) / "topology.pdb"
             tmp_pdb.write_bytes(topology_bytes)
-
-            # Check ligand valency if present
-            # (MISATO ligands may need RDKit validation)
 
             # Build mdtraj trajectory for alignment
             # Convert to nm for mdtraj (which expects nm internally).
@@ -162,48 +144,3 @@ def preprocess_one(
     except Exception:
         logger.exception("Failed to process %s", system_id)
         return None
-
-
-def main() -> None:
-    import warnings
-    warnings.warn(
-        "scripts/preprocess_misato.py is deprecated. "
-        "Use 'kinematic preprocess misato' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    parser = argparse.ArgumentParser(description="Preprocess MISATO dataset")
-    parser.add_argument("--input-dir", type=str, required=True)
-    parser.add_argument("--output-dir", type=str, default="data/processed/coords")
-    parser.add_argument("--ref-dir", type=str, default="data/processed/refs")
-    parser.add_argument("--manifest-out", type=str, default="data/processed/misato_manifest.json")
-    parser.add_argument(
-        "--coords-unit",
-        choices=("auto", "nm", "angstrom"),
-        default="auto",
-        help=(
-            "Coordinate unit for input HDF5 coordinates. "
-            "'auto' uses metadata + geometric heuristics."
-        ),
-    )
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    systems = find_misato_systems(Path(args.input_dir))
-    logger.info("Found %d MISATO systems", len(systems))
-
-    manifest_entries = collect_manifest_entries(
-        systems,
-        lambda system: preprocess_one(
-            system,
-            Path(args.output_dir),
-            Path(args.ref_dir),
-            args.coords_unit,
-        ),
-    )
-    write_manifest_entries(manifest_entries, args.manifest_out)
-
-
-if __name__ == "__main__":
-    main()

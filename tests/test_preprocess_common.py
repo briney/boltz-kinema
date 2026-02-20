@@ -1,27 +1,17 @@
-"""Tests for shared preprocessing script helpers."""
+"""Tests for shared preprocessing helpers."""
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
-import sys
 
 import numpy as np
 
-
-def _load_preprocess_common_module():
-    module_path = Path(__file__).resolve().parents[1] / "scripts" / "preprocess_common.py"
-    spec = importlib.util.spec_from_file_location("preprocess_common_script", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module spec for {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-preprocess_common = _load_preprocess_common_module()
+from kinematic.data.preprocess_common import (
+    collect_manifest_entries,
+    finalize_processed_system,
+    write_manifest_entries,
+)
 
 
 class _DummyTraj:
@@ -59,18 +49,14 @@ def test_finalize_processed_system_builds_expected_manifest_entry(monkeypatch, t
         calls["ref"] = (len(atoms), ref_coords_A.shape, Path(output_path))
         return Path(output_path)
 
-    monkeypatch.setattr(
-        preprocess_common,
-        "_load_preprocessing_ops",
-        lambda: {
-            "build_observation_mask": fake_build_observation_mask,
-            "convert_trajectory": fake_convert_trajectory,
-            "extract_atom_metadata": fake_extract_atom_metadata,
-            "save_reference_structure": fake_save_reference_structure,
-        },
-    )
+    import kinematic.data.preprocess_common as pc_mod
 
-    out = preprocess_common.finalize_processed_system(
+    monkeypatch.setattr(pc_mod, "build_observation_mask", fake_build_observation_mask)
+    monkeypatch.setattr(pc_mod, "convert_trajectory", fake_convert_trajectory)
+    monkeypatch.setattr(pc_mod, "extract_atom_metadata", fake_extract_atom_metadata)
+    monkeypatch.setattr(pc_mod, "save_reference_structure", fake_save_reference_structure)
+
+    out = finalize_processed_system(
         system_id="sys1",
         dataset="toy",
         traj=_DummyTraj(),
@@ -100,7 +86,7 @@ def test_collect_manifest_entries_filters_failed_systems() -> None:
             return None
         return {"id": system["id"]}
 
-    out = preprocess_common.collect_manifest_entries(systems, preprocess_fn)
+    out = collect_manifest_entries(systems, preprocess_fn)
     assert out == [{"id": 1}, {"id": 3}]
 
 
@@ -108,7 +94,7 @@ def test_write_manifest_entries_writes_json(tmp_path) -> None:
     entries = [{"system_id": "a"}, {"system_id": "b"}]
     path = tmp_path / "manifest.json"
 
-    out_path = preprocess_common.write_manifest_entries(entries, path)
+    out_path = write_manifest_entries(entries, path)
 
     assert out_path == path
     with open(path) as f:

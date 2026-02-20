@@ -9,17 +9,10 @@ Pipeline:
   3. Build observation mask
   4. Unit conversion: nm -> A, ps -> ns
   5. Save coords .npz + reference structure .npz
-
-Usage:
-    python scripts/preprocess_atlas.py \\
-        --input-dir data/raw/atlas \\
-        --output-dir data/processed/coords \\
-        --ref-dir data/processed/refs
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 import tempfile
 from pathlib import Path
@@ -28,18 +21,7 @@ from kinematic.data.preprocessing import (
     align_trajectory,
     remove_solvent,
 )
-try:
-    from scripts.preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
-except ImportError:
-    from preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
+from kinematic.data.preprocess_common import finalize_processed_system
 
 logger = logging.getLogger(__name__)
 
@@ -113,38 +95,3 @@ def preprocess_one(
     except Exception:
         logger.exception("Failed to process %s", system_id)
         return None
-
-
-def main() -> None:
-    import warnings
-    warnings.warn(
-        "scripts/preprocess_atlas.py is deprecated. "
-        "Use 'kinematic preprocess atlas' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    parser = argparse.ArgumentParser(description="Preprocess ATLAS dataset")
-    parser.add_argument("--input-dir", type=str, required=True)
-    parser.add_argument("--output-dir", type=str, default="data/processed/coords")
-    parser.add_argument("--ref-dir", type=str, default="data/processed/refs")
-    parser.add_argument("--manifest-out", type=str, default="data/processed/atlas_manifest.json")
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    input_dir = Path(args.input_dir)
-    output_dir = Path(args.output_dir)
-    ref_dir = Path(args.ref_dir)
-
-    systems = find_atlas_systems(input_dir)
-    logger.info("Found %d ATLAS systems", len(systems))
-
-    manifest_entries = collect_manifest_entries(
-        systems,
-        lambda system: preprocess_one(system, output_dir, ref_dir),
-    )
-    write_manifest_entries(manifest_entries, args.manifest_out)
-
-
-if __name__ == "__main__":
-    main()

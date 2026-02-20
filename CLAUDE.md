@@ -41,6 +41,14 @@ kinematic download-training-data --datasets all --output-dir data/raw
 kinematic download-training-data --datasets atlas,cath2 --output-dir data/raw
 ```
 
+### Preprocess
+```bash
+kinematic preprocess atlas --input-dir data/raw/atlas
+kinematic preprocess megasim --input-dir data/raw/megasim --subsample-mutants
+kinematic preprocess misato --input-dir data/raw/misato --coords-unit auto
+```
+Seven dataset subcommands: `atlas`, `cath`, `dd13m`, `mdposit`, `megasim`, `misato`, `octapeptides`. Each accepts `--input-dir`, `--output-dir`, `--ref-dir`, `--manifest-out`. Dataset-specific options: `megasim` has `--subsample-mutants`/`--all-mutants`; `misato` has `--coords-unit`.
+
 ### Inference
 ```bash
 python scripts/generate.py --config configs/inference.yaml --input structure.pdb
@@ -49,7 +57,7 @@ python scripts/generate.py --config configs/inference.yaml --input structure.pdb
 ## Architecture
 
 ### Source Layout
-`src/` layout with all code under `src/kinematic/`. Six subpackages: `cli/`, `model/`, `data/`, `training/`, `inference/`, `evaluation/`.
+`src/` layout with all code under `src/kinematic/`. Six subpackages: `cli/`, `model/`, `data/`, `training/`, `inference/`, `evaluation/`. Per-dataset preprocessing modules live in `data/datasets/`.
 
 ### Model Hierarchy
 ```

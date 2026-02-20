@@ -7,17 +7,10 @@ Format: topology.pdb + trajs/run001_protein.cmprsd.xtc + dataset.json.
 
 All 5 replicas per system are treated as independent trajectories.
 System size is very small (8 residues, ~60-100 heavy atoms).
-
-Usage:
-    python scripts/preprocess_octapeptides.py \\
-        --input-dir data/raw/octapeptides \\
-        --output-dir data/processed/coords \\
-        --ref-dir data/processed/refs
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 import tempfile
 from pathlib import Path
@@ -26,18 +19,7 @@ from kinematic.data.preprocessing import (
     align_trajectory,
     remove_solvent,
 )
-try:
-    from scripts.preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
-except ImportError:
-    from preprocess_common import (
-        collect_manifest_entries,
-        finalize_processed_system,
-        write_manifest_entries,
-    )
+from kinematic.data.preprocess_common import finalize_processed_system
 
 logger = logging.getLogger(__name__)
 
@@ -115,40 +97,3 @@ def preprocess_one(
     except Exception:
         logger.exception("Failed to process %s", system_id)
         return None
-
-
-def main() -> None:
-    import warnings
-    warnings.warn(
-        "scripts/preprocess_octapeptides.py is deprecated. "
-        "Use 'kinematic preprocess octapeptides' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    parser = argparse.ArgumentParser(description="Preprocess Octapeptides dataset")
-    parser.add_argument("--input-dir", type=str, required=True)
-    parser.add_argument("--output-dir", type=str, default="data/processed/coords")
-    parser.add_argument("--ref-dir", type=str, default="data/processed/refs")
-    parser.add_argument(
-        "--manifest-out", type=str, default="data/processed/octapeptides_manifest.json"
-    )
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    systems = find_octapeptide_systems(Path(args.input_dir))
-    logger.info("Found %d octapeptide systems", len(systems))
-
-    manifest_entries = collect_manifest_entries(
-        systems,
-        lambda system: preprocess_one(
-            system,
-            Path(args.output_dir),
-            Path(args.ref_dir),
-        ),
-    )
-    write_manifest_entries(manifest_entries, args.manifest_out)
-
-
-if __name__ == "__main__":
-    main()

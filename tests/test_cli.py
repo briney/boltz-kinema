@@ -18,6 +18,7 @@ def test_cli_help():
     assert "Kinematic" in result.output
     assert "train" in result.output
     assert "download-training-data" in result.output
+    assert "precompute-trunk-embeddings" in result.output
 
 
 def test_cli_version():
@@ -45,6 +46,18 @@ def test_download_help():
     assert result.exit_code == 0
     assert "--datasets" in result.output
     assert "--output-dir" in result.output
+
+
+def test_precompute_trunk_embeddings_help():
+    """``kinematic precompute-trunk-embeddings --help`` shows all options."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["precompute-trunk-embeddings", "--help"])
+    assert result.exit_code == 0
+    assert "--manifest" in result.output
+    assert "--checkpoint" in result.output
+    assert "--output-dir" in result.output
+    assert "--device" in result.output
+    assert "--recycling-steps" in result.output
 
 
 def test_python_m_kinematic_help():

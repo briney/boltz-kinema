@@ -11,18 +11,10 @@ Storage estimate per system (200-residue protein):
   - s_trunk:  200 x 384 x 2 bytes = 150 KB
   - z_trunk:  200 x 200 x 128 x 2 bytes = 10 MB
   - Total: ~10.3 MB per system
-
-Usage:
-    python scripts/precompute_trunk.py \\
-        --manifest data/processed/manifest.json \\
-        --checkpoint ~/.boltz/boltz2_conf.ckpt \\
-        --output-dir data/processed/trunk_embeddings \\
-        --device cuda
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 from dataclasses import asdict
@@ -160,13 +152,12 @@ def prepare_features_for_system(
     Feature dict with keys needed by the trunk.
     """
     ref_data = np.load(ref_path, allow_pickle=False)
-    coords_data = np.load(coords_path, allow_pickle=False)
+    np.load(coords_path, allow_pickle=False)  # validate coords file exists
 
     ref_coords = ref_data["ref_coords"]      # (n_atoms, 3) Angstrom
     residue_indices = ref_data["residue_indices"]
     chain_ids = ref_data["chain_ids"]
     mol_types = ref_data["mol_types"]
-    elements = ref_data["elements"]
 
     # Determine number of tokens (unique residues)
     n_tokens = int(residue_indices.max()) + 1
@@ -375,38 +366,3 @@ def precompute_all(
     with open(manifest_path, "w") as f:
         json.dump(entries, f, indent=2)
     logger.info("Updated manifest with trunk_cache_dir")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Precompute Boltz-2 trunk embeddings"
-    )
-    parser.add_argument("--manifest", type=str, required=True)
-    parser.add_argument(
-        "--checkpoint",
-        type=str,
-        default="~/.boltz/boltz2_conf.ckpt",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="data/processed/trunk_embeddings",
-    )
-    parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--recycling-steps", type=int, default=3)
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    checkpoint = Path(args.checkpoint).expanduser()
-    precompute_all(
-        args.manifest,
-        checkpoint,
-        args.output_dir,
-        device=args.device,
-        recycling_steps=args.recycling_steps,
-    )
-
-
-if __name__ == "__main__":
-    main()

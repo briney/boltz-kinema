@@ -255,10 +255,11 @@ def prepare_features_for_system(
             atom_to_token[0, i, ri] = 1.0
     feats["atom_to_token"] = atom_to_token
 
-    # Contact conditioning (zeros = no contacts)
-    feats["contact_conditioning"] = torch.zeros(
-        1, n_tokens, n_tokens, device=device
-    )
+    # Contact conditioning — one-hot (B, N, N, 5) over 5 classes.
+    # Class 0 = UNSPECIFIED (no conditioning). Set channel 0 to 1.
+    contact_cond = torch.zeros(1, n_tokens, n_tokens, 5, device=device)
+    contact_cond[..., 0] = 1.0
+    feats["contact_conditioning"] = contact_cond
     feats["contact_threshold"] = torch.zeros(
         1, n_tokens, n_tokens, device=device
     )

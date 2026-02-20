@@ -1,6 +1,6 @@
 """ATLAS dataset preprocessing.
 
-Converts GROMACS .xtc trajectories + .gro topology to processed format.
+Converts GROMACS .xtc trajectories + .pdb topology to processed format.
 ~1,500 protein chains, 3x100ns trajectories each.
 
 Pipeline:
@@ -30,7 +30,7 @@ def find_atlas_systems(input_dir: Path) -> list[dict]:
     """Discover ATLAS systems from directory structure.
 
     Expected layout:
-        input_dir/<chain_id>/<chain_id>_<replica>.gro
+        input_dir/<chain_id>/<chain_id>.pdb
         input_dir/<chain_id>/<chain_id>_<replica>.xtc
     """
     systems = []
@@ -39,12 +39,16 @@ def find_atlas_systems(input_dir: Path) -> list[dict]:
             continue
         chain_id = chain_dir.name
 
-        # Find topology files (.gro)
+        # Find topology file (.pdb preferred, .gro fallback)
+        pdb_files = sorted(chain_dir.glob("*.pdb"))
         gro_files = sorted(chain_dir.glob("*.gro"))
-        if not gro_files:
-            logger.warning("No .gro file found for %s, skipping", chain_id)
+        if pdb_files:
+            topology = pdb_files[0]
+        elif gro_files:
+            topology = gro_files[0]
+        else:
+            logger.warning("No topology file (.pdb/.gro) found for %s, skipping", chain_id)
             continue
-        topology = gro_files[0]
 
         # Find trajectory files (.xtc)
         xtc_files = sorted(chain_dir.glob("*.xtc"))

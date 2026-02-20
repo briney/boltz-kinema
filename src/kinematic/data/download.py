@@ -91,7 +91,7 @@ def download_atlas(output_dir: Path) -> None:
 
     Source: https://www.dsimb.inserm.fr/ATLAS/
     ~1,500 protein chains, 3x100ns trajectories each.
-    Format: GROMACS .xtc trajectories + .gro topology.
+    Format: GROMACS .xtc trajectories + .pdb topology.
     """
     base_url = "https://www.dsimb.inserm.fr/ATLAS"
     atlas_dir = output_dir / "atlas"
